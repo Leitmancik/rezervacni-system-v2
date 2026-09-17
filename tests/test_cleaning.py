@@ -72,15 +72,16 @@ class CleaningTests(unittest.TestCase):
         sheet = MagicMock()
         rows = [['Host', 'Test', 'host@example.com', '2030-01-01',
                  '2030-01-02', 'Potvrzeno', 'stay', '', 2500]]
-        with patch.object(storage, 'connected', return_value=True), \
+        with patch('audit.commit') as audit_commit, patch.object(storage, 'connected', return_value=True), \
                 patch.object(storage, 'load_cleaners', return_value=[
                     {'name': 'Firma', 'email': 'firma@example.com'}]), \
                 patch.object(storage, '_reservation_assignment_sheet',
                              return_value=(sheet, rows, 9)):
             storage.assign_cleaner('stay', 'firma@example.com')
-        sheet.update.assert_called_once_with(
-            range_name='J2', values=[['firma@example.com']],
-            value_input_option='RAW')
+        requests, events = audit_commit.call_args.args
+        self.assertEqual(requests[0]['updateCells']['range']['startColumnIndex'], 9)
+        self.assertEqual(events[0][3], 'Změna')
+        self.assertIn('firma@example.com', events[0][6])
 
     def test_live_contact_raw_and_lost_response(self):
         sheet = MagicMock()

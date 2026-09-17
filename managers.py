@@ -4,6 +4,7 @@ import re
 import uuid
 import gspread
 import storage
+import audit
 from domain import StorageError
 
 HEADER = ['ID', 'Jméno', 'E-mail', 'Výchozí správce ID']
@@ -116,16 +117,23 @@ def backfill():
             changes = [{'range': gspread.utils.rowcol_to_a1(i + 2, index + 1), 'values': [[manager_id]]}
                        for i, r in enumerate(rows) if any(r) and (len(r) <= index or not r[index].strip())]
             if changes:
-                sheet.batch_update(changes, value_input_option='RAW')
+                requests, events = [], []
+                for i, row in enumerate(rows):
+                    if any(row) and (len(row) <= index or not row[index].strip()):
+                        requests.append(audit.update_cell(sheet, i+2, index+1, manager_id))
+                        events.append(audit.event(row[6], {COLUMN: ''}, {COLUMN: manager_id}, 'Automatické přiřazení správce'))
+                audit.commit(requests, events)
         else:
             with storage._db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 for rid, raw in db.execute("SELECT id,payload FROM records WHERE kind='res'").fetchall():
                     values = json.loads(raw)
+                    before = list(values)
                     values += [''] * max(0, 11 - len(values))
                     if not values[10]:
                         values[10] = manager_id
                         db.execute('UPDATE records SET payload=? WHERE id=?', (json.dumps(values), rid))
+                        audit.local(db, rid, before, values, 'Automatické přiřazení správce')
     storage.refresh()
 
 
@@ -139,8 +147,9 @@ def assign(reservation_id, manager_id):
             matches = [i + 2 for i, r in enumerate(rows) if len(r) > 6 and r[6] == reservation_id]
             if len(matches) != 1:
                 raise StorageError('Rezervace nebyla jednoznačně nalezena. Obnovte data.')
-            sheet.update(range_name=gspread.utils.rowcol_to_a1(matches[0], index + 1),
-                         values=[[manager_id]], value_input_option='RAW')
+            row = rows[matches[0]-2]
+            audit.commit([audit.update_cell(sheet, matches[0], index+1, manager_id)],
+                         [audit.event(reservation_id, {COLUMN: row[index] if len(row)>index else ''}, {COLUMN: manager_id})])
         else:
             with storage._db() as db:
                 db.execute('BEGIN IMMEDIATE')
@@ -148,7 +157,9 @@ def assign(reservation_id, manager_id):
                 if row is None:
                     raise StorageError('Rezervace už neexistuje.')
                 values = json.loads(row[0])
+                before = list(values)
                 values += [''] * max(0, 11 - len(values))
                 values[10] = manager_id
                 db.execute('UPDATE records SET payload=? WHERE id=?', (json.dumps(values), reservation_id))
+                audit.local(db, reservation_id, before, values)
     storage.refresh()

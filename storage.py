@@ -198,7 +198,10 @@ def add_reservation(first, last, email, start, end, expected_price, request_id):
             values += [''] * max(0, manager_index + 1 - len(values))
             values[manager_index] = manager_id
             try:
-                sheet.append_row(values, value_input_option='RAW')
+                import audit
+                _, _, header = _sheet('Rezervace', RES_HEADER, include_header=True)
+                audit.commit([{'appendCells': {'sheetId': sheet.id, 'rows': [{'values': audit.cells(values)}], 'fields': 'userEnteredValue'}}],
+                             [audit.event(request_id, None, audit.snapshot(values, header), 'Rezervační formulář')])
             except Exception:
                 # Po ztracené odpovědi neopakujeme zápis naslepo.
                 if not any(r['id'] == request_id for r in load_reservations(force=True)):
@@ -222,6 +225,8 @@ def add_reservation(first, last, email, start, end, expected_price, request_id):
                 values += ['', manager_id]
                 db.execute('INSERT INTO records VALUES (?,?,?)',
                            ('res', request_id, json.dumps(values)))
+                import audit
+                audit.local(db, request_id, None, values, 'Rezervační formulář')
     refresh()
     return request_id
 
@@ -250,6 +255,18 @@ def _mutate(kind, rid, values=None, status=None, delete=False):
                     sheet.append_row(values, value_input_option='RAW')
                 else:
                     raise StorageError('Záznam už neexistuje. Obnovte prosím data.')
+            elif kind == 'res':
+                import audit
+                _, _, headers = _sheet(name, header, include_header=True)
+                before = rows[matches[0] - 2]
+                after = list(before)
+                if delete:
+                    requests = [{'deleteDimension': {'range': {'sheetId': sheet.id, 'dimension': 'ROWS', 'startIndex': matches[0]-1, 'endIndex': matches[0]}}}]
+                    after = None
+                else:
+                    after[5] = STATUS[status]
+                    requests = [audit.update_cell(sheet, matches[0], 6, STATUS[status])]
+                audit.commit(requests, [audit.event(rid, audit.snapshot(before, headers), audit.snapshot(after, headers) if after is not None else None)])
             elif delete:
                 sheet.delete_rows(matches[0])
             elif status:
@@ -259,6 +276,9 @@ def _mutate(kind, rid, values=None, status=None, delete=False):
                              values=[values], value_input_option='RAW')
         else:
             with _db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                prior = db.execute('SELECT payload FROM records WHERE id=? AND kind=?', (rid, kind)).fetchone()
+                before = json.loads(prior[0]) if prior else None
                 if delete:
                     db.execute('DELETE FROM records WHERE id=? AND kind=?', (rid, kind))
                 elif status:
@@ -270,6 +290,10 @@ def _mutate(kind, rid, values=None, status=None, delete=False):
                     db.execute('UPDATE records SET payload=? WHERE id=?', (json.dumps(payload), rid))
                 else:
                     db.execute('INSERT OR REPLACE INTO records VALUES (?,?,?)', (kind, rid, json.dumps(values)))
+                if kind == 'res':
+                    import audit
+                    after = None if delete else payload if status else values
+                    audit.local(db, rid, before, after)
     refresh()
 
 
@@ -480,10 +504,11 @@ def assign_cleaner(reservation_id, email):
                 raise StorageError(
                     'Rezervace nebyla jednoznačně nalezena. Obnovte data.'
                 )
-            sheet.update(
-                range_name=gspread.utils.rowcol_to_a1(matches[0], index + 1),
-                values=[[email]], value_input_option='RAW',
-            )
+            import audit
+            old = rows[matches[0]-2]
+            before = {CLEANER_COLUMN: old[index] if len(old) > index else ''}
+            audit.commit([audit.update_cell(sheet, matches[0], index+1, email)],
+                         [audit.event(reservation_id, before, {CLEANER_COLUMN: email})])
         else:
             with _db() as db:
                 db.execute('BEGIN IMMEDIATE')
@@ -494,8 +519,11 @@ def assign_cleaner(reservation_id, email):
                 if row is None:
                     raise StorageError('Rezervace už neexistuje. Obnovte data.')
                 values = json.loads(row[0])
+                before = list(values)
                 values += [''] * max(0, 10 - len(values))
                 values[9] = email
                 db.execute('UPDATE records SET payload=? WHERE id=?',
                            (json.dumps(values), reservation_id))
+                import audit
+                audit.local(db, reservation_id, before, values)
     refresh()

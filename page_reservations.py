@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 import storage
 import managers
+import audit
 from domain import STATUS, StorageError, date_label, money, today, nights_label, created_label
 import ui
 
@@ -129,6 +130,19 @@ def render():
             manager_assignment(r, manager_people)
             if cleaners is not None:
                 cleaning_assignment(r, cleaners)
+    try:
+        history = pd.DataFrame(audit.load(), columns=audit.HEADER).map(safe_cell)
+    except StorageError as error:
+        st.warning('Historii nelze načíst. ' + str(error))
+        history = None
+    if history is not None:
+        with st.expander('Historie rezervací · posledních 1 000 změn'):
+            st.caption('Všechny rezervace včetně smazaných. Čas je v pásmu Europe/Prague. Starší změny se automaticky odstraňují.')
+            if history.empty:
+                st.info('Historie se začne plnit od aktivace sledování změn.')
+            else:
+                st.dataframe(history, hide_index=True, width='stretch')
+                st.download_button('Stáhnout historii CSV', history.to_csv(index=False, sep=';').encode('utf-8-sig'), 'historie-rezervaci.csv', mime='text/csv')
     if filtered:
         frame = export_frame(filtered)
         with st.expander('Exportovat zobrazené rezervace'):
@@ -136,6 +150,13 @@ def render():
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 frame.to_excel(writer, sheet_name='Rezervace', index=False)
+                if history is not None:
+                    history.to_excel(writer, sheet_name='Historie rezervací', index=False)
+                    history_sheet = writer.sheets['Historie rezervací']
+                    history_sheet.freeze_panes = 'A2'
+                    history_sheet.auto_filter.ref = history_sheet.dimensions
+                    for col in history_sheet.columns:
+                        history_sheet.column_dimensions[col[0].column_letter].width = 28 if col[0].column < 6 else 65
                 sheet = writer.sheets['Rezervace']
                 sheet.freeze_panes = 'A2'
                 sheet.auto_filter.ref = sheet.dimensions

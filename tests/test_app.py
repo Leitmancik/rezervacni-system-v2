@@ -103,12 +103,13 @@ class StorageTests(unittest.TestCase):
     def test_live_fresh_check_and_raw_write(self):
         start = today()+timedelta(days=5)
         sheet = MagicMock()
-        with patch('managers.default_id', return_value='manager'), patch('managers.reservation_sheet', return_value=(sheet, [], 11)), patch.object(storage, 'connected', return_value=True), patch.object(storage, '_sheet', return_value=(sheet, [])) as read, patch.object(storage, 'load_prices', return_value=[]) as prices:
+        with patch('audit.commit') as audit_commit, patch('managers.default_id', return_value='manager'), patch('managers.reservation_sheet', return_value=(sheet, [], 11)), patch.object(storage, 'connected', return_value=True), patch.object(storage, '_sheet', side_effect=[(sheet, []), (sheet, [], storage.RES_HEADER + ['Úklid - e-mail','Poznámka','Správce ID'])]) as read, patch.object(storage, 'load_prices', return_value=[]) as prices:
             storage.add_reservation('=formula', 'Host', 'test@example.com', start, start+timedelta(days=1), None, 'r4')
-        self.assertEqual(sheet.append_row.call_args.args[0][11], 'manager')
-        read.assert_called_once_with('Rezervace', storage.RES_HEADER)
+        requests, events = audit_commit.call_args.args
+        self.assertEqual(requests[0]['appendCells']['rows'][0]['values'][11]['userEnteredValue']['stringValue'], 'manager')
+        self.assertEqual(events[0][3], 'Vytvoření')
         prices.assert_called_once_with(force=True)
-        self.assertEqual(sheet.append_row.call_args.kwargs['value_input_option'], 'RAW')
+        self.assertEqual(requests[0]['appendCells']['rows'][0]['values'][0]['userEnteredValue']['stringValue'], '=formula')
 
     def test_missing_price_id_renders_without_duplicate_forms(self):
         from streamlit.testing.v1 import AppTest
