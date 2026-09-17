@@ -70,3 +70,13 @@ class ManagerTests(unittest.TestCase):
         next(b for b in app.button if b.label=='Nastavit výchozího správce').click().run()
         self.assertFalse(app.exception)
         self.assertEqual(managers.default_id(),new['id'])
+
+    def test_empty_google_sheet_is_initialized_and_can_be_read_before_setup(self):
+        sheet = MagicMock()
+        sheet.get_all_values.return_value = [[]]
+        book = MagicMock()
+        book.worksheet.return_value = sheet
+        with patch.object(storage, '_document', return_value=book):
+            self.assertEqual(managers._sheet(), (sheet, [], ''))
+            self.assertEqual(managers._sheet(create=True), (sheet, [], ''))
+        sheet.update.assert_called_once_with(range_name='A1:D1', values=[managers.HEADER], value_input_option='RAW')

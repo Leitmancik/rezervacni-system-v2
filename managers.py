@@ -18,6 +18,10 @@ def _sheet(create=False):
             return None, [], ''
         sheet = storage._document().add_worksheet(title='Správci', rows=100, cols=4)
     raw = sheet.get_all_values()
+    if not any(str(cell).strip() for row in raw for cell in row):
+        raw = []
+    if not raw and not create:
+        return sheet, [], ''
     if not raw and create:
         sheet.update(range_name='A1:D1', values=[HEADER], value_input_option='RAW')
         raw = [HEADER]
