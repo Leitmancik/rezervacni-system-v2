@@ -17,8 +17,6 @@ def render():
             st.session_state.pop(key, None)
     try:
         people, default = managers.load()
-        if default:
-            managers.backfill()
     except StorageError as error:
         st.error(str(error))
         return

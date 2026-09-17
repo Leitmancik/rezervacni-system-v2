@@ -66,9 +66,10 @@ def render():
         storage.refresh()
     try:
         manager_people, default = managers.load()
-        if default:
-            managers.backfill()
         rows = storage.load_reservations()
+        if default and any(not r.get('manager_id') for r in rows):
+            managers.backfill()
+            rows = storage.load_reservations(force=True)
     except StorageError as error:
         st.error(str(error))
         return
