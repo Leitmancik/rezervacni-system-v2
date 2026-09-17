@@ -68,6 +68,8 @@ class StorageTests(unittest.TestCase):
         self.env = patch.dict(os.environ, CHALUPA_DB=self.tmp.name + '/test.sqlite3')
         self.env.start()
         storage.refresh()
+        import managers
+        managers.add('Test správce', 'manager@example.com')
 
     def tearDown(self):
         self.env.stop()
@@ -101,8 +103,9 @@ class StorageTests(unittest.TestCase):
     def test_live_fresh_check_and_raw_write(self):
         start = today()+timedelta(days=5)
         sheet = MagicMock()
-        with patch.object(storage, 'connected', return_value=True), patch.object(storage, '_sheet', return_value=(sheet, [])) as read, patch.object(storage, 'load_prices', return_value=[]) as prices:
+        with patch('managers.default_id', return_value='manager'), patch('managers.reservation_sheet', return_value=(sheet, [], 11)), patch.object(storage, 'connected', return_value=True), patch.object(storage, '_sheet', return_value=(sheet, [])) as read, patch.object(storage, 'load_prices', return_value=[]) as prices:
             storage.add_reservation('=formula', 'Host', 'test@example.com', start, start+timedelta(days=1), None, 'r4')
+        self.assertEqual(sheet.append_row.call_args.args[0][11], 'manager')
         read.assert_called_once_with('Rezervace', storage.RES_HEADER)
         prices.assert_called_once_with(force=True)
         self.assertEqual(sheet.append_row.call_args.kwargs['value_input_option'], 'RAW')

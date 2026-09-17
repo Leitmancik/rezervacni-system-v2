@@ -7,6 +7,7 @@ import page_reservations
 import page_pricing
 import page_cleaning
 import page_cleaning_response
+import page_managers
 
 st.set_page_config(page_title='Chalupa · Rezervace', page_icon='🌿', layout='wide',
                    initial_sidebar_state='collapsed')
@@ -23,6 +24,7 @@ page = st.navigation([
     st.Page(page_reservations.render, title='Rezervace', icon=':material/event_available:', url_path='rezervace'),
     st.Page(page_pricing.render, title='Ceník', icon=':material/payments:', url_path='cenotvorba'),
     st.Page(page_cleaning.render, title='Úklid', icon=':material/cleaning_services:', url_path='uklid'),
+    st.Page(page_managers.render, title='Správce', icon=':material/supervisor_account:', url_path='spravce'),
 ], position='top')
 st.html('<div class="brand"><div class="brand-symbol">⌂</div><div>'
         '<div class="brand-name">CHALUPA</div><small>Vernířovice · Rezervace pobytu</small></div></div>')

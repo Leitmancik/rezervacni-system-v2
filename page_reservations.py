@@ -4,6 +4,7 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 import storage
+import managers
 from domain import STATUS, StorageError, date_label, money, today, nights_label, created_label
 import ui
 
@@ -31,11 +32,11 @@ def safe_cell(value):
 
 
 def export_frame(rows):
-    columns = ['Jméno', 'Příjmení', 'E-mail', 'Příjezd', 'Odjezd', 'Nocí', 'Stav', 'Cena celkem', 'ID', 'Úklid - e-mail', 'Vytvořeno']
+    columns = ['Jméno', 'Příjmení', 'E-mail', 'Příjezd', 'Odjezd', 'Nocí', 'Stav', 'Cena celkem', 'ID', 'Úklid - e-mail', 'Správce ID', 'Vytvořeno']
     return pd.DataFrame([
         [safe_cell(r['first_name']), safe_cell(r['last_name']), safe_cell(r['email']),
          r['date_from'].isoformat(), r['date_to'].isoformat(),
-         (r['date_to']-r['date_from']).days, STATUS[r['status']], r['price'], safe_cell(r['id']), safe_cell(r.get('cleaner_email', '')), safe_cell(r.get('created_at', ''))]
+         (r['date_to']-r['date_from']).days, STATUS[r['status']], r['price'], safe_cell(r['id']), safe_cell(r.get('cleaner_email', '')), safe_cell(r.get('manager_id', '')), safe_cell(r.get('created_at', ''))]
         for r in rows], columns=columns)
 
 
@@ -64,6 +65,9 @@ def render():
     if st.button('Obnovit data', icon=':material/refresh:', type='tertiary'):
         storage.refresh()
     try:
+        manager_people, default = managers.load()
+        if default:
+            managers.backfill()
         rows = storage.load_reservations()
     except StorageError as error:
         st.error(str(error))
@@ -121,6 +125,7 @@ def render():
                         remove(r)
                 except StorageError as error:
                     st.error(str(error))
+            manager_assignment(r, manager_people)
             if cleaners is not None:
                 cleaning_assignment(r, cleaners)
     if filtered:
@@ -184,4 +189,30 @@ def cleaning_assignment(reservation, cleaners):
                 st.error(str(error))
             else:
                 ui.flash('Úklid byl přiřazen.' if choice else 'Přiřazení úklidu bylo zrušeno.')
+                st.rerun()
+
+
+def manager_assignment(reservation, people):
+    assigned = reservation.get('manager_id', '')
+    labels = {p['id']: p['name'] + ' · ' + p['email'] for p in people}
+    with st.expander('Správce · ' + labels.get(assigned, 'Není nastaven'), expanded=not assigned):
+        if not people:
+            st.warning('Nejdříve přidejte výchozího správce na záložce Správce.')
+            return
+        options = list(labels)
+        if assigned and assigned not in labels:
+            options.append(assigned)
+            labels[assigned] = 'Správce chybí v seznamu · ' + assigned
+        with st.form('manager_assignment_' + reservation['id']):
+            choice = st.selectbox('Správce rezervace', options,
+                                  index=options.index(assigned) if assigned in options else 0,
+                                  format_func=labels.get, key='manager_choice_' + reservation['id'] + '_' + assigned)
+            save = st.form_submit_button('Uložit správce', width='stretch', disabled=not reservation['id'])
+        if save:
+            try:
+                managers.assign(reservation['id'], choice)
+            except StorageError as error:
+                st.error(str(error))
+            else:
+                ui.flash('Správce rezervace byl změněn.')
                 st.rerun()

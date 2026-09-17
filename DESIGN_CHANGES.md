@@ -39,3 +39,11 @@ Integrace e-mailů je převzatá a nadále ve výchozím stavu vypnutá.
 - Jednotné transakční ukládání rezervací pro všechny aplikace nad stejnými daty.
 - Skutečné fotografie, kapacita a vybavení chalupy po dodání ověřených podkladů.
 - Aktivace úklidových e-mailů po ověření na kopii tabulky.
+
+## Správci rezervací
+- Nová záložka Správce: přidávání kontaktů a výběr výchozího správce.
+- První správce se stává výchozím. Nové rezervace ukládají jeho ID přímo při vytvoření.
+- Změna výchozího správce zachovává existující přiřazení. Doplní se pouze rezervace bez správce.
+- Konkrétního správce lze změnit v Rezervacích; prázdné přiřazení není povoleno.
+- Google Sheets používají samostatný list Správci a sloupec Správce ID vyhledávaný podle hlavičky, takže zůstávají zachovány úklidy i další sloupce.
+- Evidence správců neposílá e-maily a nemění veřejný přístup aplikace.

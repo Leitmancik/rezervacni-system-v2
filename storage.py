@@ -71,7 +71,7 @@ def _sheet(name, header, include_header=False):
     return sheet, rows[1:]
 
 
-def _decode_res(rows, cleaner_index=None):
+def _decode_res(rows, cleaner_index=None, manager_index=None):
     result = []
     ids = set()
     for row in rows:
@@ -91,6 +91,8 @@ def _decode_res(rows, cleaner_index=None):
                            status=({'Potvrzeno': 'confirmed', **{label: key for key, label in STATUS.items()}}
                                    .get(str(v[5]).strip(), 'pending')),
                            id=rid, created_at=v[7], price=parse_money(v[8]),
+                           manager_id=(str(v[manager_index]).strip()
+                               if manager_index is not None and len(v) > manager_index else ''),
                            cleaner_email=(str(v[cleaner_index]).strip()
                                if cleaner_index is not None and len(v) > cleaner_index
                                else '')))
@@ -137,14 +139,18 @@ def _local_rows(kind):
 def _read(kind):
     with _errors():
         cleaner_index = 9
+        manager_index = 10
         if connected():
             if kind == 'res':
-                _, rows, cleaner_index = _reservation_assignment_sheet()
+                import managers
+                _, rows, header = _sheet('Rezervace', RES_HEADER, include_header=True)
+                cleaner_index = header.index(CLEANER_COLUMN) if CLEANER_COLUMN in header else None
+                manager_index = header.index(managers.COLUMN) if managers.COLUMN in header else None
             else:
                 _, rows = _sheet('Cenotvorba', PRICE_HEADER)
         else:
             rows = _local_rows(kind)
-        return (_decode_res(rows, cleaner_index) if kind == 'res'
+        return (_decode_res(rows, cleaner_index, manager_index) if kind == 'res'
                 else _decode_prices(rows))
 
 
@@ -185,7 +191,12 @@ def add_reservation(first, last, email, start, end, expected_price, request_id):
             if price != expected_price:
                 raise StorageError('Cena se mezitím změnila. Zkontrolujte nový součet '
                                    'a rezervaci odešlete znovu.')
+            import managers
+            manager_id = managers.default_id()
+            sheet, _, manager_index = managers.reservation_sheet(create=True)
             values = _reservation_values(first, last, email, start, end, price, request_id)
+            values += [''] * max(0, manager_index + 1 - len(values))
+            values[manager_index] = manager_id
             try:
                 sheet.append_row(values, value_input_option='RAW')
             except Exception:
@@ -205,7 +216,10 @@ def add_reservation(first, last, email, start, end, expected_price, request_id):
                 price, _ = quote(start, end, load_prices(force=True))
                 if price != expected_price:
                     raise StorageError('Cena se změnila. Zkontrolujte součet a odešlete znovu.')
+                import managers
+                manager_id = managers.default_id()
                 values = _reservation_values(first, last, email, start, end, price, request_id)
+                values += ['', manager_id]
                 db.execute('INSERT INTO records VALUES (?,?,?)',
                            ('res', request_id, json.dumps(values)))
     refresh()

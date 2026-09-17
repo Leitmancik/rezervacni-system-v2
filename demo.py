@@ -19,4 +19,9 @@ if __name__ == '__main__':
              'Čeká na potvrzení', 'demo-stay-2', day.isoformat(), 8700]),
         ]:
             db.execute('INSERT OR IGNORE INTO records VALUES (?,?,?)', (kind, rid, json.dumps(values)))
+    import managers
+    if not managers.load()[0]:
+        managers.add('Ukázkový správce', 'spravce@example.com')
+    else:
+        managers.backfill()
     print('Ukázková data jsou připravena v místní SQLite databázi.')
