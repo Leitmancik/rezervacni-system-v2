@@ -83,3 +83,23 @@ Nejdřív otestovat nasazený koordinátor na kopii tabulky a vlastní testovac�
 adrese. Ověřit přijetí zprávy, potvrzení, druhý tým, odhlášení a neodeslání po něm.
 Nesmí se testovat změnou skutečných rezervací nebo rozesílkou skutečným týmům.
 Lokální testy nyní prošly; živá rozesílka a produkční setup zatím nejsou provedené.
+
+## Historie rezervací
+Koordinátor vyžaduje pokročilou službu Google Sheets API (`Sheets`, v4).
+Při aktualizaci uložit kód, spustit setup a vydat novou verzi existujícího nasazení.
+`setup` založí list Historie rezervací a stávající rezervace označí jako Výchozí stav.
+Historii před aktivací nelze zpětně rekonstruovat.
+
+Každý řádek obsahuje čas v Europe/Prague, ID události, ID rezervace, typ události,
+zdroj a původní/nové hodnoty v JSON. Změny ukládají jen rozdíly; vytvoření,
+výchozí stav a smazání celý dostupný stav. Uchovává se nejnovějších 1000 událostí.
+Starší události se při dalším zápisu odstraní. Aktivní rezervace se tím nemažou.
+Změna rezervace i její audit jsou součástí jednoho atomického Sheets batchUpdate;
+ve vývojové SQLite jedné transakce. Opakovaný stejný stav nebo přiřazení není změna.
+
+Sledované operace: vytvoření v nové aplikaci, změna stavu, smazání, ruční přiřazení
+úklidu, přijetí úklidu osobním odkazem, změna správce a automatické doplnění správce.
+Přímé ruční zásahy v Google tabulce nebo původní aplikaci tímto protokolem neprocházejí.
+Veřejná správa nemá ověřenou identitu uživatele; audit ji proto netvrdí.
+Export Excelu přidává list Historie rezervací pro všechny rezervace včetně smazaných,
+nezávisle na aktuálním filtru seznamu. Historii lze stáhnout i samostatně jako CSV.

@@ -61,6 +61,7 @@ function setup() {
     if (!p.APP_URL.startsWith('https://') || p.API_SECRET.length < 32 || p.TOKEN_SECRET.length < 32) throw new Error('Neplatné nastavení služby.');
     const c = contacts_(); column_(c, 'E-mailing', true); column_(c, 'Odhlášeno dne', true);
     column_(reservations_(), 'Úklid - e-mail', true);
+    setupHistory_();
     table_('Nabídky úklidu', OFFER_HEADERS, true); table_('E-maily úklidu', MAIL_HEADERS, true);
     if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'processQueue')) ScriptApp.newTrigger('processQueue').timeBased().everyMinutes(1).create();
     return 'Připraveno; existující zaplacené pobyty se zpětně nerozesílají.';
@@ -84,20 +85,20 @@ function dispatch_(q) {
     const t = reservations_(), r = unique_(t, 6, q.id);
     // Nejdříve připravíme idempotentní frontu. Do zaplacení ji worker neodešle.
     if (q.status === PAID && r.row[5] !== PAID && !r.row[column_(t, 'Úklid - e-mail')]) enqueue_(r);
-    t.sheet.getRange(r.number, 6).setValue(q.status);
+    historyChange_(t, r, {5:q.status}, 'Aplikace · bez přihlášení');
     SpreadsheetApp.flush(); return {};
   }
   if (q.action === 'delete') {
     const t = reservations_(), matches = t.rows.filter(r => r[6] === q.id);
     if (matches.length > 1) reject_('ID rezervace není jedinečné.');
-    if (matches.length) t.sheet.deleteRow(unique_(t, 6, q.id).number);
+    if (matches.length) historyChange_(t, unique_(t, 6, q.id), null, 'Aplikace · bez přihlášení');
     SpreadsheetApp.flush(); return {};
   }
   if (q.action === 'assign') {
     const t = reservations_(), r = unique_(t, 6, q.id);
     let email = '';
     if (q.email) email = unique_(contacts_(), 1, q.email, true).row[1];
-    t.sheet.getRange(r.number, column_(t, 'Úklid - e-mail') + 1).setValue(email);
+    historyChange_(t, r, {[column_(t, 'Úklid - e-mail')]:email}, 'Aplikace · bez přihlášení');
     SpreadsheetApp.flush(); return {};
   }
   const token = decode_(q.token);
@@ -122,7 +123,7 @@ function dispatch_(q) {
   if (!active_(contacts, person)) reject_('Tento kontakt je odhlášený z nabídek úklidu.');
   if (r.row[index] && r.row[index].toLowerCase() !== person.row[1].toLowerCase()) reject_('Tento úklid již převzal jiný tým.');
   if (q.action === 'claim') {
-    t.sheet.getRange(r.number, index + 1).setValue(person.row[1]); SpreadsheetApp.flush();
+    historyChange_(t, r, {[index]:person.row[1]}, 'Osobní odkaz úklidu · '+person.row[1]); SpreadsheetApp.flush();
   }
   return {kind: 'claim', name: person.row[0], date: day.split('-').reverse().join('. ')};
 }
@@ -208,4 +209,52 @@ function processQueue() {
       SpreadsheetApp.flush();
     }
   });
+}
+
+// Atomický zápis změny rezervace a historie přes Google Sheets API.
+const HISTORY_HEADERS = ['Čas (Praha)', 'ID události', 'ID rezervace', 'Událost', 'Zdroj', 'Původní hodnoty', 'Nové hodnoty'];
+const HISTORY_LIMIT = 1000;
+function historyCells_(values) {
+  return values.map(v=>({userEnteredValue:typeof v==='number'?{numberValue:v}:{stringValue:String(v)}}));
+}
+function historySnapshot_(t, row) {
+  const result={}; t.header.forEach((name,i)=>{if(name) result[name]=String(row[i]??'');}); return result;
+}
+function historyEvent_(id, kind, source, before, after) {
+  return [Utilities.formatDate(new Date(),'Europe/Prague',"yyyy-MM-dd'T'HH:mm:ss.SSSXXX"), Utilities.getUuid(), id, kind, source, JSON.stringify(before), JSON.stringify(after)];
+}
+function historyBatch_(requests, events) {
+  const h=table_('Historie rezervací',HISTORY_HEADERS,true);
+  const sheetId=h.sheet.getSheetId();
+  if(events.length) requests.push({appendCells:{sheetId,rows:events.map(e=>({values:historyCells_(e)})),fields:'userEnteredValue'}});
+  const extra=h.rows.length+events.length-HISTORY_LIMIT;
+  if(extra>0) requests.push({deleteDimension:{range:{sheetId,dimension:'ROWS',startIndex:1,endIndex:extra+1}}});
+  if(requests.length) Sheets.Spreadsheets.batchUpdate({requests},book_().getId());
+}
+function historyChange_(t,r,changes,source) {
+  let before={},after={},requests=[];
+  const sheetId=t.sheet.getSheetId(), rowIndex=r.number-1;
+  if(changes===null) {
+    before=historySnapshot_(t,r.row);
+    requests.push({deleteDimension:{range:{sheetId,dimension:'ROWS',startIndex:rowIndex,endIndex:rowIndex+1}}});
+  } else {
+    for(const [i,value] of Object.entries(changes)) {
+      if(String(r.row[i]??'')===String(value)) continue;
+      before[t.header[i]]=String(r.row[i]??''); after[t.header[i]]=String(value);
+      requests.push({updateCells:{range:{sheetId,startRowIndex:rowIndex,endRowIndex:rowIndex+1,startColumnIndex:Number(i),endColumnIndex:Number(i)+1},rows:[{values:historyCells_([value])}],fields:'userEnteredValue'}});
+    }
+    if(!requests.length) return;
+  }
+  historyBatch_(requests,[historyEvent_(r.row[6],changes===null?'Smazání':'Změna',source,before,after)]);
+}
+function setupHistory_() {
+  const h=table_('Historie rezervací',HISTORY_HEADERS,true);
+  h.sheet.setFrozenRows(1);
+  h.sheet.getRange(1,1,1,HISTORY_HEADERS.length).setFontWeight('bold').setBackground('#234D40').setFontColor('#ffffff');
+  h.sheet.setColumnWidths(1,1,215); h.sheet.setColumnWidths(2,2,230);
+  h.sheet.setColumnWidths(4,2,200); h.sheet.setColumnWidths(6,2,400);
+  if(!h.rows.length) {
+    const t=reservations_();
+    historyBatch_([],t.rows.filter(r=>r[6]).map(r=>historyEvent_(r[6],'Výchozí stav','Aktivace historie',{},historySnapshot_(t,r))));
+  }
 }
