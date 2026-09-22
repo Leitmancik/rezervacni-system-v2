@@ -19,8 +19,11 @@ def validate(data):
         raise StorageError('Fakturační údaj může mít nejvýše 200 znaků.')
     if not re.fullmatch(r'[A-Z]{2}', result['country']):
         raise StorageError('Země musí mít dvoupísmenný kód, například CZ.')
-    if result['country'] in ('CZ', 'SK') and not re.fullmatch(r'\d{3}\s?\d{2}', result['zip']):
-        raise StorageError('PSČ zadejte ve tvaru 123 45.')
+    if result['country'] in ('CZ', 'SK'):
+        zipcode = re.sub(r'\s+', '', result['zip'])
+        if not re.fullmatch(r'[0-9]{5}', zipcode):
+            raise StorageError('PSČ musí obsahovat 5 číslic, například 123 45 nebo 12345.')
+        result['zip'] = zipcode[:3] + ' ' + zipcode[3:]
     if result['on_company']:
         if not result['company'] or not result['registration_no']:
             raise StorageError('Pro fakturu na firmu doplňte název firmy a IČO.')
@@ -38,7 +41,7 @@ def fields(data=None):
     st.markdown('**Fakturační adresa**')
     street = st.text_input('Ulice a číslo domu', value=d.get('street', ''), max_chars=200)
     city = st.text_input('Obec', value=d.get('city', ''), max_chars=200)
-    zipcode = st.text_input('PSČ', value=d.get('zip', ''), max_chars=20)
+    zipcode = st.text_input('PSČ', value=d.get('zip', ''), max_chars=20, placeholder='123 45')
     country = st.text_input('Kód země', value=d.get('country', 'CZ'), max_chars=2,
                             help='CZ = Česko, SK = Slovensko, DE = Německo, AT = Rakousko, PL = Polsko.')
     company = st.checkbox('Vystavit fakturu na firmu', value=d.get('on_company', False))

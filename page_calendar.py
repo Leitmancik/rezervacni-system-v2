@@ -36,6 +36,8 @@ def render():
 
 
 def booking(reservations, prices):
+    # Streamlit can reload domain while this page still holds the old class.
+    from domain import StorageError as CurrentStorageError
     st.html('<div class="section-label">01 / Termín a cena</div>')
     st.markdown('### Naplánujte si dovolenou')
     st.session_state.setdefault('arrival', None)
@@ -96,7 +98,7 @@ def booking(reservations, prices):
             st.session_state['_request'] = request
         try:
             rid = storage.add_reservation(first, last, email, start, end, total, request[1], billing_data=billing_data)
-        except StorageError as error:
+        except (StorageError, CurrentStorageError) as error:
             storage.refresh()
             st.error(str(error))
         else:

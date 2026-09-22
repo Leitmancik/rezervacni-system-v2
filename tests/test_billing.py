@@ -58,6 +58,39 @@ class BillingTests(unittest.TestCase):
             with self.assertRaises(StorageError): self.add(data)
         self.assertEqual(storage.load_reservations(True), [])
 
+    def test_postcode_normalizes_spaces(self):
+        for zipcode in ('11000', '110 00', ' 110  00 ', '110\u00a0\u202f00'):
+            with self.subTest(zipcode=zipcode):
+                self.assertEqual(billing.validate(dict(ADDRESS, zip=zipcode))['zip'], '110 00')
+
+    def test_invalid_postcode_shows_message_after_domain_reload(self):
+        from streamlit.testing.v1 import AppTest
+        import domain
+        import page_calendar
+        class ReloadedStorageError(Exception):
+            pass
+        app = AppTest.from_string('''
+import streamlit as st
+from datetime import timedelta
+from domain import today
+import page_calendar
+st.session_state.setdefault('arrival', today() + timedelta(days=5))
+st.session_state.setdefault('departure', today() + timedelta(days=7))
+page_calendar.booking([], [])
+''').run()
+        values = {'Jméno': 'Test', 'Příjmení': 'Host', 'E-mail': 'guest@example.com',
+                  'Ulice a číslo domu': 'Testovací 12', 'Obec': 'Praha', 'PSČ': '1234'}
+        for field in app.text_input:
+            if field.label in values:
+                field.set_value(values[field.label])
+        with patch.object(domain, 'StorageError', ReloadedStorageError), \
+             patch.object(billing, 'StorageError', ReloadedStorageError):
+            next(b for b in app.button if b.label == 'Odeslat žádost o rezervaci').click().run()
+        self.assertFalse(app.exception)
+        self.assertIn('PSČ musí obsahovat 5 číslic', app.error[0].value)
+        self.assertEqual(next(f for f in app.text_input if f.label == 'Jméno').value, 'Test')
+        self.assertEqual(storage.load_reservations(True), [])
+
     def test_legacy_can_be_completed(self):
         rid = self.add()
         self.assertEqual(storage.load_reservations(True)[0]['billing'], {})
