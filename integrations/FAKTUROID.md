@@ -13,8 +13,13 @@ Implementovaný proces pro českého **neplátce DPH**:
    Při nedoplatku vyúčtování čeká a stav je vidět ve správě.
 6. Vyúčtování odešle až po ověření odečtené zálohy (zbývá zaplatit nula).
 
-Kód dosud není aktivovaný v produkci. Lokální testy používají pouze simulované
-API a izolované databáze, žádné skutečné faktury ani e-maily.
+Nasazeno a aktivováno 22. 9. 2026 v `chalupa-v2.streamlit.app` a ve verzi 3
+stávajícího Google koordinátoru. Ověřeno živé připojení k Fakturoid API,
+neplátce DPH, bankovní účet, přihlášení majitele, formulář a načtení fronty.
+Trigger `processInvoices` běží vedle původního `processQueue`.
+Lokální testy používají simulované API a izolované databáze. Celý cyklus se
+skutečným vystavením a doručením faktury zatím nebyl v produkci ověřen.
+Bankovní párování a automatické přepnutí rezervace do zaplaceno zbývá zapojit.
 
 ## Fakturoid
 

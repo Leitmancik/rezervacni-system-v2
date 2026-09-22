@@ -82,7 +82,7 @@ function reject_(message) { const e = new Error(message); e.publicMessage = mess
 function dispatch_(q) {
   if(q.require_billing && (typeof billingEnabled_ !== 'function' || !billingEnabled_())) reject_('Fakturace není aktivovaná v koordinátoru.');
   if(q.action.startsWith('billing_')) {
-    if(typeof billingDispatch_ !== 'function' || !billingEnabled_()) reject_('Fakturace není aktivovaná.');
+    if(typeof billingDispatch_ !== 'function' || !billingEnabled_()) reject_('Fakturace není aktivovaná v koordinátoru.');
     return billingDispatch_(q);
   }
   if (q.action === 'status') {
