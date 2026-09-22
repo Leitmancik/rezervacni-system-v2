@@ -119,7 +119,9 @@ def render():
         (not search or search.casefold() in f"{r['first_name']} {r['last_name']} {r['email']} {r['id']} {invoice_jobs.get(r['id'], {}).get('vs', '')}".casefold())
         and (not statuses or STATUS[r['status']] in statuses)
         and (period == 'Všechny pobyty' or (r['date_to'] > today()) == (period == 'Nadcházející a probíhající')))]
-    st.caption('Časy vytvoření jsou uvedené v časovém pásmu Europe/Prague. Stav platby zatím měníte ručně.')
+    st.caption('Časy vytvoření jsou uvedené v časovém pásmu Europe/Prague. ' +
+               ('Úhrady zálohových faktur se přebírají z Fakturoidu automaticky, obvykle během několika minut. Pro aktuální stav obnovte data.'
+                if billing.enabled() else 'Stav platby měníte ručně.'))
     st.caption(f'Zobrazeno {len(filtered)} z {len(rows)} rezervací · Souhrny nahoře zahrnují všechny záznamy.')
     if not filtered:
         st.info('Žádné rezervace pro tento výběr. Zkuste upravit filtry.')

@@ -102,3 +102,24 @@ reset();approve();context.billingApi_=()=>({vat_mode:'vat_payer'});work();assert
 reset();approve();db.Rezervace.rows.push([...db.Rezervace.rows[0]]);db.Rezervace.rows[1][6]='stay-2';
 context.dispatch_({action:'status',id:'stay-2',status:'Potvrzeno - čeká na zaplacení'});assert.equal(jobs()[1].vs,'9000000002');
 console.log('Billing: disabled coordinator, VAT-mode mismatch and unique reservation numbers passed.');
+
+reset();approve();work();
+context.processPayments();assert.equal(db.Rezervace.rows[0][5],'Potvrzeno - čeká na zaplacení');
+external.invoices[0].status='paid';
+props.RESEND_API_KEY='test';props.TOKEN_SECRET='test';props.APP_URL='https://example.com';props.MAIL_FROM='test@example.com';props.MAIL_REPLY_TO='test@example.com';
+context.processPayments();context.processPayments();
+assert.equal(db.Rezervace.rows[0][5],'Zaplaceno');assert.ok(jobs()[0].payment_synced_at);
+assert.equal(db['Nabídky úklidu'].rows.length,1);assert.equal(db['E-maily úklidu'].rows.length,2);
+assert.equal(db['Historie rezervací'].rows.filter(r=>r[4]==='Fakturoid · potvrzená úhrada').length,1);
+assert.equal(external.invoices.length,1); // No early settlement.
+for(const change of [i=>i.variable_symbol='other',i=>i.total='NaN',i=>i.total=6000,i=>i.currency='EUR',i=>i.custom_id='other']) {
+ reset();approve();work();external.invoices[0].status='paid';change(external.invoices[0]);context.processPayments();
+ assert.equal(db.Rezervace.rows[0][5],'Potvrzeno - čeká na zaplacení');assert.ok(jobs()[0].payment_error);
+}
+reset();approve();work();external.invoices[0].status='paid';db.Rezervace.rows[0][5]='Čeká na potvrzení';context.processPayments();
+assert.equal(db.Rezervace.rows[0][5],'Čeká na potvrzení');assert.ok(jobs()[0].payment_error);
+reset();approve();work();external.invoices[0].status='paid';fail={path:'invoices/100.json'};context.processPayments();
+assert.equal(db.Rezervace.rows[0][5],'Potvrzeno - čeká na zaplacení');context.processPayments();assert.equal(db.Rezervace.rows[0][5],'Zaplaceno');
+reset();approve();work();external.invoices[0].status='paid';let paymentJob=jobs()[0];paymentJob.state='Chyba';context.billingSave_(paymentJob);context.processPayments();
+assert.equal(db.Rezervace.rows[0][5],'Zaplaceno'); // Payment is independent of email failure.
+console.log('Payments: paid sync, partial/unpaid protection, identity checks, retry, audit and exactly-once cleaning queue passed.');

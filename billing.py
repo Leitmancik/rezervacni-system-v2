@@ -144,6 +144,8 @@ def panel(reservation, job):
                 st.warning(final['error'])
             if job.get('error'):
                 st.warning(job['error'])
+            if job.get('payment_error'):
+                st.warning(job['payment_error'])
             st.caption('Změny vystaveného dokladu a storno vyřiďte ve Fakturoidu. Změna stavu rezervace doklad nestornuje.')
             if (job.get('state') != 'Odesláno' or (final and final.get('state') != 'Odesláno')) and st.button('Znovu ověřit / pokračovat', key='billing_retry_' + reservation['id']):
                 try:

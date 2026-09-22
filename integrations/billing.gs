@@ -23,6 +23,8 @@ function setupBilling() {
     setupHistory_();
     if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'processInvoices'))
       ScriptApp.newTrigger('processInvoices').timeBased().everyMinutes(1).create();
+    if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'processPayments'))
+      ScriptApp.newTrigger('processPayments').timeBased().everyMinutes(1).create();
     return 'Připraveno. Historické rezervace se automaticky nefakturují.';
   });
 }
@@ -78,7 +80,7 @@ function billingEnqueue_(t,r) {
 function billingDispatch_(q) {
   if(q.action==='billing_list') {
     const jobs={};
-    for(const j of billingJobs_()) if(j.kind==='advance') jobs[j.rid]={state:j.state,vs:j.vs,number:j.number,url:j.url,error:j.error};
+    for(const j of billingJobs_()) if(j.kind==='advance') jobs[j.rid]={state:j.state,vs:j.vs,number:j.number,url:j.url,error:j.error,payment_error:j.payment_error,payment_synced_at:j.payment_synced_at};
     for(const j of billingJobs_()) if(j.kind==='final' && jobs[j.rid]) jobs[j.rid].final={state:j.state,number:j.number,url:j.url,error:j.error};
     return {jobs};
   }
@@ -195,6 +197,43 @@ function billingProcess_(job) {
 }
 function billingCheckout_(job) {
   return Utilities.formatDate(new Date(),'Europe/Prague','yyyy-MM-dd HH:mm:ss') >= job.date_to+' 11:00:00';
+}
+/** Nezávislé na odeslání e-mailu i datu pobytu. Volá stávající idempotentní frontu úklidů. */
+function billingPayment_(job) {
+  const invoice=billingApi_('get','invoices/'+job.invoice_id+'.json');
+  if(invoice.status!=='paid')return;
+  const total=Number(invoice.total);
+  if(invoice.id!==job.invoice_id || invoice.custom_id!=='chalupa:'+job.key ||
+      String(invoice.variable_symbol)!==job.vs || invoice.document_type!=='proforma' ||
+      invoice.currency!=='CZK' || !Number.isFinite(total) || Math.abs(total-Number(job.amount))>0.005)
+    throw new Error('Uhrazený doklad neodpovídá rezervaci.');
+  const t=reservations_(),matches=t.rows.filter(r=>r[6]===job.rid);
+  if(matches.length!==1)throw new Error('Rezervace chybí nebo není jedinečná.');
+  const r=unique_(t,6,job.rid);
+  if(![STATUSES[1],PAID].includes(r.row[5]) || isoDate_(r.row[3])!==job.date_from ||
+      isoDate_(r.row[4])!==job.date_to || billingAmount_(r.row[8])!==job.amount)
+    throw new Error('Rezervace byla změněna; úhradu ověřte ručně.');
+  if(r.row[5]!==PAID) {
+    if(properties_().RESEND_API_KEY && !r.row[column_(t,'Úklid - e-mail')])enqueue_(r);
+    historyChange_(t,r,{5:PAID},'Fakturoid · potvrzená úhrada');
+    SpreadsheetApp.flush();
+  }
+  job.payment_synced_at=new Date().toISOString();
+  job.payment_error='';
+}
+function processPayments() {
+  if(!billingEnabled_())return;
+  return locked_(()=>{
+    billingConfig_();
+    const pending=billingJobs_().filter(j=>j.kind==='advance' && j.invoice_id && !j.payment_synced_at)
+      .sort((a,b)=>(a.payment_checked_at||0)-(b.payment_checked_at||0)).slice(0,10);
+    for(const job of pending) {
+      try {billingPayment_(job);job.payment_error='';}
+      catch(e) {job.payment_error='Úhradu se nepodařilo převzít. Zkontrolujte doklad, cenu a stav rezervace; kontrola se automaticky zopakuje.';}
+      job.payment_checked_at=Date.now();billingSave_(job);
+    }
+    console.log('Kontrola úhrad dokončena: '+pending.length+' dokladů, '+pending.filter(j=>j.payment_synced_at).length+' potvrzených úhrad.');
+  });
 }
 function billingFinal_(advance) {
   if(!billingCheckout_(advance))return;

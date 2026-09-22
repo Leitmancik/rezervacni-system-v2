@@ -19,7 +19,11 @@ neplátce DPH, bankovní účet, přihlášení majitele, formulář a načtení
 Trigger `processInvoices` běží vedle původního `processQueue`.
 Lokální testy používají simulované API a izolované databáze. Celý cyklus se
 skutečným vystavením a doručením faktury zatím nebyl v produkci ověřen.
-Bankovní párování a automatické přepnutí rezervace do zaplaceno zbývá zapojit.
+Bankovní párování probíhá ve Fakturoidu. `processPayments` každou minutu
+kontroluje až deset dosud nepřevzatých úhrad (nejdéle nekontrolované první).
+Potvrzenou rezervaci označí jako zaplacenou až po ověření stavu `paid`, ID,
+VS, částky, měny a shody termínu rezervace. Zapíše audit a připraví úklidové
+e-maily stejnou frontou jako ruční změna stavu. Opakovaná kontrola je neduplikuje.
 
 ## Fakturoid
 
@@ -125,10 +129,11 @@ Aplikaci nasadit z tohoto repozitáře do Streamlit Cloud po dokončení konfigu
   výsledku musí prověřit obsluha; frontu kvůli tomu nemažte.
 - Worker vyřídí maximálně tři úlohy v běhu; chyby mají prodlevu až jednu hodinu.
   Zkontrolovat limit API požadavků tarifu i kvóty Apps Script podle počtu pobytů.
-- **Automatický přenos zaplacení do stavu rezervace zatím není součástí této
-  změny.** Bankovní párování se děje ve Fakturoidu. Vyúčtování ověřuje úhradu
-  přímo u něj; stav rezervace majitel prozatím mění ručně. Webhook pro zaplacení
-  lze doplnit v dalším kroku spolu s navazujícími úklidovými nabídkami.
+- Přenos úhrad používá pravidelné dotazování API, nepotřebuje webhook ani
+  bankovní e-mail do rezervační aplikace. Při změně ceny, termínu, zrušení či
+  smazání rezervace se stav nepřepíše; chyba je vidět ve fakturační správě.
+  Vrácení platby nebo ruční odebrání úhrady ve Fakturoidu automaticky neruší
+  již převzatý stav zaplaceno. Doklady vytvořené mimo tuto integraci se nepárují.
 
 ## Testy
 
