@@ -3,6 +3,7 @@ import uuid
 from html import escape
 import streamlit as st
 import storage
+import billing
 from domain import today, quote, money, nights_label, date_label, conflict, StorageError
 import calendar_view
 import ui
@@ -81,18 +82,20 @@ def booking(reservations, prices):
         first = st.text_input('Jméno', max_chars=100, placeholder='Vaše jméno')
         last = st.text_input('Příjmení', max_chars=100, placeholder='Vaše příjmení')
         email = st.text_input('E-mail', max_chars=254, placeholder='vy@priklad.cz')
+        billing_data = billing.fields()
         submitted = st.form_submit_button('Odeslat žádost o rezervaci', type='primary',
                                          width='stretch', disabled=not valid)
-        st.caption('Teď nic neplatíte. Termín potvrdí majitel. '
-                   'Potvrzení přijetí žádosti uvidíte zde; e-mail se automaticky neposílá.')
+        st.caption('Teď nic neplatíte. Termín potvrdí majitel.' +
+                   (' Po schválení vám přijde zálohová faktura s údaji k platbě.' if billing.enabled() else
+                    ' Potvrzení přijetí žádosti uvidíte zde.'))
     if submitted:
-        fingerprint = (first.strip(), last.strip(), email.strip(), start, end)
+        fingerprint = (first.strip(), last.strip(), email.strip(), start, end, tuple(billing_data.items()))
         request = st.session_state.get('_request')
         if not request or request[0] != fingerprint:
             request = (fingerprint, uuid.uuid4().hex[:12])
             st.session_state['_request'] = request
         try:
-            rid = storage.add_reservation(first, last, email, start, end, total, request[1])
+            rid = storage.add_reservation(first, last, email, start, end, total, request[1], billing_data=billing_data)
         except StorageError as error:
             storage.refresh()
             st.error(str(error))

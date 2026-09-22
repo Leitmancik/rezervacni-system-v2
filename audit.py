@@ -9,7 +9,7 @@ import storage
 TITLE = 'Historie rezervací'
 HEADER = ['Čas (Praha)', 'ID události', 'ID rezervace', 'Událost', 'Zdroj', 'Původní hodnoty', 'Nové hodnoty']
 LIMIT = 1000
-LOCAL_HEADER = storage.RES_HEADER + ['Úklid - e-mail', 'Správce ID']
+LOCAL_HEADER = storage.RES_HEADER + ['Úklid - e-mail', 'Správce ID', 'Fakturační údaje']
 
 
 def event(rid, before, after, source='Aplikace · bez přihlášení', initial=False):

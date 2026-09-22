@@ -9,6 +9,12 @@ import ui
 
 @st.dialog('Odstranit cenové období?')
 def remove(period):
+    import admin_auth
+    try:
+        admin_auth.check()
+    except StorageError as error:
+        st.error(str(error))
+        return
     st.write(period['label'] or 'Cenové období')
     st.write('Odstranění se projeví v obou aplikacích. Ceny již uložených rezervací zůstanou stejné.')
     if st.button('Odstranit období', type='primary'):
@@ -49,6 +55,8 @@ def editor(period=None):
 
 
 def render():
+    import admin_auth
+    admin_auth.require()
     ui.heading('PRO MAJITELE / CENOTVORBA', 'Ceník pobytů',
                'Nastavte běžnou cenu za noc a výjimky pro sezónu, svátky nebo víkendy.')
     ui.admin_note()

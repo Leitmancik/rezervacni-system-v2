@@ -6,12 +6,19 @@ import streamlit as st
 import storage
 import managers
 import audit
+import billing
 from domain import STATUS, StorageError, date_label, money, today, nights_label, created_label
 import ui
 
 
 @st.dialog('Smazat rezervaci?')
 def remove(reservation):
+    import admin_auth
+    try:
+        admin_auth.check()
+    except StorageError as error:
+        st.error(str(error))
+        return
     st.write(f"{reservation['first_name']} {reservation['last_name']} · "
              f"{date_label(reservation['date_from'])} – {date_label(reservation['date_to'])}")
     st.write('Rezervace se odstraní i ze společné tabulky a termín se uvolní v obou aplikacích.')
@@ -42,7 +49,9 @@ def export_frame(rows):
 
 
 def change_status(rid, key):
+    import admin_auth
     try:
+        admin_auth.check()
         selected = st.session_state[key]
         storage.set_status(rid, selected)
     except StorageError as error:
@@ -53,10 +62,14 @@ def change_status(rid, key):
         suffix = (' · Nabídka úklidu se odešle přihlášeným týmům, pokud již nebyla vytvořena a úklid není přiřazen.'
                   if selected == 'paid' and cleaning_mail.configured() else
                   ' · Rozesílka úklidu zatím není aktivovaná.' if selected == 'paid' else '')
+        if selected == 'confirmed' and billing.enabled():
+            suffix += ' · Faktura byla zařazena ke zpracování.'
         ui.flash('Stav rezervace byl změněn na: ' + STATUS[selected] + suffix)
 
 
 def render():
+    import admin_auth
+    admin_auth.require()
     ui.heading('PRO MAJITELE / REZERVACE', 'Rezervace pod kontrolou',
                'Potvrďte nové žádosti, evidujte platby a domluvte úklid.')
     ui.admin_note()
@@ -74,6 +87,13 @@ def render():
     except StorageError as error:
         st.error(str(error))
         return
+    try:
+        invoice_jobs = billing.jobs()
+    except StorageError as error:
+        st.error('Fakturaci nelze načíst. ' + str(error))
+        invoice_jobs = {}
+    if not billing.enabled():
+        st.info('Automatická fakturace zatím není aktivovaná. Fakturační údaje lze připravit už teď.')
     try:
         cleaners = storage.load_cleaners()
     except StorageError as error:
@@ -96,7 +116,7 @@ def render():
     )
     period = filters[2].selectbox('Období', ['Nadcházející a probíhající', 'Všechny pobyty', 'Minulé pobyty'])
     filtered = [r for r in rows if (
-        (not search or search.casefold() in f"{r['first_name']} {r['last_name']} {r['email']} {r['id']}".casefold())
+        (not search or search.casefold() in f"{r['first_name']} {r['last_name']} {r['email']} {r['id']} {invoice_jobs.get(r['id'], {}).get('vs', '')}".casefold())
         and (not statuses or STATUS[r['status']] in statuses)
         and (period == 'Všechny pobyty' or (r['date_to'] > today()) == (period == 'Nadcházející a probíhající')))]
     st.caption('Časy vytvoření jsou uvedené v časovém pásmu Europe/Prague. Stav platby zatím měníte ručně.')
@@ -127,6 +147,7 @@ def render():
                         remove(r)
                 except StorageError as error:
                     st.error(str(error))
+            billing.panel(r, invoice_jobs.get(r['id'], {}))
             manager_assignment(r, manager_people)
             if cleaners is not None:
                 cleaning_assignment(r, cleaners)

@@ -31,6 +31,13 @@ cestu k databázi. Pro běh s Google Sheets vynechte `CHALUPA_DEMO` a nastavte
 - Úklidový tým a ruční přiřazení úklidu ke dni odjezdu.
 - Volitelný koordinátor nabídek úklidu: [integrations/README.md](integrations/README.md).
 
+## Fakturace
+
+Formulář obsahuje fakturační adresu a volbu firmy s IČO/DIČ. Volitelná integrace
+Fakturoidu vystaví a odešle zálohovku po schválení a vyúčtování po odjezdu
+a úplném uhrazení zálohy (proces pro neplátce DPH). Aktivace a omezení:
+[integrations/FAKTUROID.md](integrations/FAKTUROID.md).
+
 ## Data a konfigurace
 
 Zachována kompatibilita původních listů a sloupců Google Sheets:
@@ -68,7 +75,8 @@ neaktualizuje původní nasazenou aplikaci.
 
 ### Aktuální omezení
 
-Jde o vývojovou verzi. Správa je stejně jako ve výchozím projektu bez přihlášení.
+Jde o vývojovou verzi. Správa je bez nastavení `admin.password` a bez zapnuté fakturace přístupná bez přihlášení.
+Při zapnuté fakturaci se vyžaduje heslo majitele v Secrets.
 Před zpřístupněním aplikace se skutečnými rezervacemi je potřeba oddělit oprávnění
 hosta a majitele. Veřejnost zdrojového kódu neznamená připravenost správy pro hosty.
 Google Sheets neposkytují atomickou kontrolu volného termínu a zápis mezi více

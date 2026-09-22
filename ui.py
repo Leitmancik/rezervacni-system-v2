@@ -23,7 +23,9 @@ def show_flash():
 
 
 def admin_note():
-    st.caption('Vývojová verze · Správa je zatím přístupná bez přihlášení.')
+    import storage
+    if not storage.config().get('admin', {}).get('password'):
+        st.caption('Vývojová verze · Správa je zatím přístupná bez přihlášení.')
 
 
 def badge(text, tone='green'):

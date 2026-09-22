@@ -19,3 +19,4 @@ jobs:
         env:
           CHALUPA_DEMO: '1'
       - run: node tests/test_cleaning_gateway.cjs
+      - run: node tests/test_billing_gateway.cjs

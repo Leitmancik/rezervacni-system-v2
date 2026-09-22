@@ -80,11 +80,17 @@ function doPost(e) {
 }
 function reject_(message) { const e = new Error(message); e.publicMessage = message; throw e; }
 function dispatch_(q) {
+  if(q.require_billing && (typeof billingEnabled_ !== 'function' || !billingEnabled_())) reject_('Fakturace není aktivovaná v koordinátoru.');
+  if(q.action.startsWith('billing_')) {
+    if(typeof billingDispatch_ !== 'function' || !billingEnabled_()) reject_('Fakturace není aktivovaná.');
+    return billingDispatch_(q);
+  }
   if (q.action === 'status') {
     if (!STATUSES.includes(q.status)) reject_('Neplatný stav rezervace.');
     const t = reservations_(), r = unique_(t, 6, q.id);
+    if(q.status === STATUSES[1] && typeof billingEnabled_ === 'function' && billingEnabled_()) billingEnqueue_(t,r);
     // Nejdříve připravíme idempotentní frontu. Do zaplacení ji worker neodešle.
-    if (q.status === PAID && r.row[5] !== PAID && !r.row[column_(t, 'Úklid - e-mail')]) enqueue_(r);
+    if (q.status === PAID && r.row[5] !== PAID && properties_().RESEND_API_KEY && !r.row[column_(t, 'Úklid - e-mail')]) enqueue_(r);
     historyChange_(t, r, {5:q.status}, 'Aplikace · bez přihlášení');
     SpreadsheetApp.flush(); return {};
   }

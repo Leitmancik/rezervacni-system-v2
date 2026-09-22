@@ -8,6 +8,8 @@ import ui
 
 
 def render():
+    import admin_auth
+    admin_auth.require()
     ui.heading('PRO MAJITELE / SPRÁVCE', 'Správci chalupy',
                'Každá rezervace má svého správce. Určete, kdo převezme nové pobyty.')
     ui.admin_note()

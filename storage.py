@@ -71,7 +71,7 @@ def _sheet(name, header, include_header=False):
     return sheet, rows[1:]
 
 
-def _decode_res(rows, cleaner_index=None, manager_index=None):
+def _decode_res(rows, cleaner_index=None, manager_index=None, billing_index=None):
     result = []
     ids = set()
     for row in rows:
@@ -86,7 +86,10 @@ def _decode_res(rows, cleaner_index=None, manager_index=None):
         if rid and rid in ids:
             raise StorageError('Tabulka obsahuje duplicitní ID rezervace.')
         ids.add(rid)
-        result.append(dict(first_name=v[0], last_name=v[1], email=v[2],
+        billing_data = json.loads(v[billing_index]) if billing_index is not None and len(v) > billing_index and v[billing_index] else {}
+        if not isinstance(billing_data, dict):
+            raise StorageError('Neplatné fakturační údaje rezervace.')
+        result.append(dict(billing=billing_data, first_name=v[0], last_name=v[1], email=v[2],
                            date_from=start, date_to=end,
                            status=({'Potvrzeno': 'confirmed', **{label: key for key, label in STATUS.items()}}
                                    .get(str(v[5]).strip(), 'pending')),
@@ -138,19 +141,22 @@ def _local_rows(kind):
 
 def _read(kind):
     with _errors():
+        import billing
+        billing_index = billing.LOCAL_INDEX
         cleaner_index = 9
         manager_index = 10
         if connected():
             if kind == 'res':
                 import managers
                 _, rows, header = _sheet('Rezervace', RES_HEADER, include_header=True)
+                billing_index = header.index(billing.COLUMN) if billing.COLUMN in header else None
                 cleaner_index = header.index(CLEANER_COLUMN) if CLEANER_COLUMN in header else None
                 manager_index = header.index(managers.COLUMN) if managers.COLUMN in header else None
             else:
                 _, rows = _sheet('Cenotvorba', PRICE_HEADER)
         else:
             rows = _local_rows(kind)
-        return (_decode_res(rows, cleaner_index, manager_index) if kind == 'res'
+        return (_decode_res(rows, cleaner_index, manager_index, billing_index) if kind == 'res'
                 else _decode_prices(rows))
 
 
@@ -177,7 +183,10 @@ def refresh():
         st.session_state.pop(key, None)
 
 
-def add_reservation(first, last, email, start, end, expected_price, request_id):
+def add_reservation(first, last, email, start, end, expected_price, request_id, billing_data=None):
+    import billing
+    if billing_data is not None:
+        billing_data = billing.validate(billing_data)
     validate_reservation(first, last, email, start, end)
     with _lock(), _errors():
         if connected():
@@ -200,6 +209,11 @@ def add_reservation(first, last, email, start, end, expected_price, request_id):
             try:
                 import audit
                 _, _, header = _sheet('Rezervace', RES_HEADER, include_header=True)
+                if billing_data is not None:
+                    sheet, _, header = billing.sheet_column()
+                    index = header.index(billing.COLUMN)
+                    values += [''] * max(0, index + 1 - len(values))
+                    values[index] = json.dumps(billing_data, ensure_ascii=False)
                 audit.commit([{'appendCells': {'sheetId': sheet.id, 'rows': [{'values': audit.cells(values)}], 'fields': 'userEnteredValue'}}],
                              [audit.event(request_id, None, audit.snapshot(values, header), 'Rezervační formulář')])
             except Exception:
@@ -223,6 +237,8 @@ def add_reservation(first, last, email, start, end, expected_price, request_id):
                 manager_id = managers.default_id()
                 values = _reservation_values(first, last, email, start, end, price, request_id)
                 values += ['', manager_id]
+                if billing_data is not None:
+                    values.append(json.dumps(billing_data, ensure_ascii=False))
                 db.execute('INSERT INTO records VALUES (?,?,?)',
                            ('res', request_id, json.dumps(values)))
                 import audit
@@ -300,6 +316,9 @@ def _mutate(kind, rid, values=None, status=None, delete=False):
 def set_status(rid, status):
     if status not in STATUS:
         raise StorageError('Neplatný stav rezervace.')
+    import billing
+    if billing.enabled():
+        return billing.call('status', id=rid, status=STATUS[status])
     import cleaning_mail
     if cleaning_mail.configured():
         return cleaning_mail.call('status', id=rid, status=STATUS[status])
@@ -307,6 +326,9 @@ def set_status(rid, status):
 
 
 def delete_reservation(rid):
+    import billing
+    if billing.enabled():
+        return billing.call('delete', id=rid)
     import cleaning_mail
     if cleaning_mail.configured():
         return cleaning_mail.call('delete', id=rid)

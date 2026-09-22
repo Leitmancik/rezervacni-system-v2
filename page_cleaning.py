@@ -9,6 +9,8 @@ import ui
 
 
 def render():
+    import admin_auth
+    admin_auth.require()
     ui.heading(
         'PRO MAJITELE / ÚKLID', 'Úklidový tým',
         'Všichni, kdo se starají o chalupu, přehledně na jednom místě.',
